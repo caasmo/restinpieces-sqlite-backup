@@ -17,7 +17,7 @@ func main() {
 	// Create a simple slog text logger that outputs to stdout
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	dbPath := flag.String("db", "", "Path to the SQLite DB")
+	dbPath := flag.String("dbpath", "", "Path to the SQLite DB")
 	ageKeyPath := flag.String("age-key", "", "Path to the age identity (private key) file (required)")
 
 	flag.Usage = func() {

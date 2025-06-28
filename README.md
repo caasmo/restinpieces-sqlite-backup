@@ -42,7 +42,7 @@ source_path = "/path/to/your/database.db"
 backup_dir = "/path/to/your/backups"
 ```
 
-The example binary in `cmd/example/main.go` demonstrates how to initialize the `restinpieces` framework and register the backup job handler. For convenience, the example uses the `-db` flag to specify the path to the `restinpieces` database itself.
+The example binary in `cmd/example/main.go` demonstrates how to initialize the `restinpieces` framework and register the backup job handler. For convenience, the example uses the `-dbpath` flag to specify the path to the `restinpieces` database itself.
 
 ### Client-Side Setup (The Pull Client)
 
