@@ -11,31 +11,34 @@ import (
 	"time"
 	"log/slog"
 
-
-	"github.com/caasmo/restinpieces/config"
 	"github.com/caasmo/restinpieces/db"
 	"zombiezen.com/go/sqlite"
 )
 
+const ScopeDbBackup = "db_backup_config"
+
+type Config struct {
+	SourcePath string `toml:"source_path"`
+	BackupDir  string `toml:"backup_dir"`
+}
+
 // Handler handles database backup jobs
 type Handler struct {
-	configProvider *config.Provider
+	cfg *Config
 }
 
 // NewHandler creates a new Handler
-func NewHandler(provider *config.Provider) *Handler {
+func NewHandler(cfg *Config) *Handler {
 	return &Handler{
-		configProvider: provider,
+		cfg: cfg,
 	}
 }
 
 // Handle implements the JobHandler interface for database backups
 func (h *Handler) Handle(ctx context.Context, job db.Job) error {
-	cfg := h.configProvider.Get()
-
 	// Define paths
-	sourceDbPath := cfg.Db.Path // e.g., "/var/data/app.db"
-	backupDir := cfg.Backup.Dir // e.g., "/var/backups"
+	sourceDbPath := h.cfg.SourcePath
+	backupDir := h.cfg.BackupDir
 	tempBackupPath := filepath.Join(os.TempDir(), fmt.Sprintf("backup-%d.db", time.Now().UnixNano()))
 	timestamp := time.Now().UTC().Format("2006-01-02T15-04-05Z")
 	finalBackupName := fmt.Sprintf("db-backup-%s.db.gz", timestamp)
@@ -74,7 +77,7 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 }
 
 // vacuumInto creates a clean copy of the database using VACUUM INTO.
-func (h *DbBackupHandler) vacuumInto(sourcePath, destPath string) error {
+func (h *Handler) vacuumInto(sourcePath, destPath string) error {
 	// Open a read-only connection to the source database.
 	sourceConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
@@ -97,7 +100,7 @@ func (h *DbBackupHandler) vacuumInto(sourcePath, destPath string) error {
 }
 
 // compressFile reads a source file, compresses it with gzip, and writes to a destination file.
-func (h *DbBackupHandler) compressFile(sourcePath, destPath string) error {
+func (h *Handler) compressFile(sourcePath, destPath string) error {
 	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
 		return fmt.Errorf("failed to open source file for compression: %w", err)
