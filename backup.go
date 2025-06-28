@@ -90,7 +90,7 @@ func (h *Handler) vacuumInto(sourcePath, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to prepare vacuum statement: %w", err)
 	}
-	defer stmt.Close()
+	defer stmt.Finalize()
 
 	if _, err := stmt.Step(); err != nil {
 		return fmt.Errorf("failed to execute vacuum statement: %w", err)
