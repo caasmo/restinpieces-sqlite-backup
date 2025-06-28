@@ -35,7 +35,7 @@ go get github.com/caasmo/restinpieces-sqlite-backup
 
 The backup job itself is configured via the `restinpieces` `ConfigStore`. The job's configuration, including the source database path and backup directory, is stored securely in the `restinpieces` database, not passed via command-line flags in a production environment.
 
-The configuration should be stored under the scope `db_backup_config` in TOML format:
+The configuration should be stored under the scope `sqlite_backup` in TOML format:
 
 ```toml
 source_path = "/path/to/your/database.db"

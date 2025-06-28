@@ -15,7 +15,7 @@ import (
 	"zombiezen.com/go/sqlite"
 )
 
-const ScopeDbBackup = "db_backup_config"
+const ScopeDbBackup = "sqlite_backup"
 
 type Config struct {
 	SourcePath string `toml:"source_path"`
