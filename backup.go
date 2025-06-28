@@ -17,20 +17,20 @@ import (
 	"zombiezen.com/go/sqlite"
 )
 
-// DbBackupHandler handles database backup jobs
-type DbBackupHandler struct {
+// Handler handles database backup jobs
+type Handler struct {
 	configProvider *config.Provider
 }
 
-// NewDbBackupHandler creates a new DbBackupHandler
-func NewDbBackupHandler(provider *config.Provider) *DbBackupHandler {
-	return &DbBackupHandler{
+// NewHandler creates a new Handler
+func NewHandler(provider *config.Provider) *Handler {
+	return &Handler{
 		configProvider: provider,
 	}
 }
 
 // Handle implements the JobHandler interface for database backups
-func (h *DbBackupHandler) Handle(ctx context.Context, job db.Job) error {
+func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	cfg := h.configProvider.Get()
 
 	// Define paths
