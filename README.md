@@ -1,24 +1,24 @@
 # restinpieces-sqlite-backup
 
-`restinpieces-sqlite-backup` is a simple, open-source solution for backing up SQLite databases within the `restinpieces` framework. It uses a push-pull design, consisting of a server-side job to create local backups and a client-side binary to retrieve them.
+`restinpieces-sqlite-backup` provides backup functionality for SQLite databases within the `restinpieces` framework. It uses a push-pull design, consisting of a server-side job to create local backups and a client-side binary to retrieve them.
 
 ## Architecture
 
 The solution is composed of two main components:
 
-1.  **The Backup Job (Server-side)**: This component runs as a job within a `restinpieces` application. It periodically creates a compressed backup of a specified SQLite database and stores it locally on the server. It also maintains a `latest.txt` manifest file, which always points to the most recent backup, simplifying retrieval.
+1.  **The Backup Job (Server-side)**: This component runs as a job within a `restinpieces` application. It periodically creates a compressed backup of a specified SQLite database and stores it locally on the server. It also maintains a `latest.txt` manifest file, which always points to the most recent backup.
 
-2.  **The Pull Client (Client-side)**: This is a standalone command-line binary that can be run on any client machine. It connects to the server (where the backups are stored) via SFTP, reads the `latest.txt` manifest to find the newest backup, downloads it, and verifies its integrity.
+2.  **The Pull Client (Client-side)**: This is a standalone command-line binary that can be run on any client machine. It connects to the server via SFTP, reads the `latest.txt` manifest to find the newest backup, downloads it, and verifies its integrity.
 
-This design decouples the backup creation from the retrieval, allowing for a simple and secure way to pull backups from a central server to any number of client machines.
+This design decouples backup creation from retrieval, allowing backups to be pulled from a central server to any number of client machines.
 
 ## Features
 
--   **Simple Push-Pull Design**: A straightforward and robust architecture for managing backups.
--   **SQLite Backup**: Performs a backup using the `VACUUM INTO` command for a clean, minimal copy of the database.
--   **Gzip Compression**: Compresses backup files to save space.
--   **Manifest File**: A `latest.txt` file makes it easy to identify and retrieve the latest backup.
--   **SFTP Client**: A secure and simple client for pulling backups from a remote server.
+-   **Push-Pull Design**: Decouples backup creation (server-side) from retrieval (client-side).
+-   **SQLite Backup**: Performs a backup using the `VACUUM INTO` command.
+-   **Gzip Compression**: Compresses backup files.
+-   **Manifest File**: A `latest.txt` file points to the latest backup for easy retrieval.
+-   **SFTP Client**: A client is provided to pull backups from a remote server.
 -   **Backup Verification**: The client verifies the integrity of downloaded backups using `PRAGMA integrity_check`.
 
 ## Installation
