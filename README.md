@@ -33,14 +33,16 @@ go get github.com/caasmo/restinpieces-sqlite-backup
 
 ### Server-Side Setup (The Backup Job)
 
-The backup job is configured via the `restinpieces` `ConfigStore`. You need to add a configuration with the scope `db_backup_config` to your `restinpieces` database. The configuration should be in TOML format and contain the following fields:
+The backup job itself is configured via the `restinpieces` `ConfigStore`. The job's configuration, including the source database path and backup directory, is stored securely in the `restinpieces` database, not passed via command-line flags in a production environment.
+
+The configuration should be stored under the scope `db_backup_config` in TOML format:
 
 ```toml
 source_path = "/path/to/your/database.db"
 backup_dir = "/path/to/your/backups"
 ```
 
-The `cmd/example/main.go` file provides a working example of how to initialize the `restinpieces` framework and register the backup job handler.
+The example binary in `cmd/example/main.go` demonstrates how to initialize the `restinpieces` framework and register the backup job handler. For convenience, the example uses the `-db` flag to specify the path to the `restinpieces` database itself.
 
 ### Client-Side Setup (The Pull Client)
 
