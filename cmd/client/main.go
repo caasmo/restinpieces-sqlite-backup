@@ -14,8 +14,7 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
-	"modernc.org/sqlite"
-	"modernc.org/sqlite/sqlitex"
+	"zombiezen.com/go/sqlite"
 )
 
 // Config holds the configuration for the pullfile client.
@@ -46,8 +45,8 @@ func main() {
 	// 1. Connect via SSH and set up SFTP client
 	sftpClient, err := setupSftpClient(cfg)
 	if err != nil {
-		 slog.Error("Failed to set up SFTP client", "error", err)
-		 os.Exit(1)
+		slog.Error("Failed to set up SFTP client", "error", err)
+		os.Exit(1)
 	}
 	defer sftpClient.Close()
 
@@ -166,25 +165,29 @@ func verifyBackup(ctx context.Context, gzippedBackupPath string) error {
 
 	slog.Info("Decompressed backup for verification", "path", tempDBPath)
 
-	// Open the database with the pure Go driver
-	db, err := sqlitex.Open(tempDBPath, sqlite.OpenReadOnly, "")
+	// Open the database with the zombiezen driver
+	conn, err := sqlite.OpenConn(tempDBPath, sqlite.OpenReadOnly)
 	if err != nil {
 		return fmt.Errorf("failed to open decompressed database: %w", err)
 	}
-	defer db.Close()
+	defer conn.Close()
 
 	// Run the integrity check
-	conn := db.Get(ctx)
-	var result string
-	err = sqlitex.Result(conn.Prep("PRAGMA integrity_check;"), func(res *sqlite.Stmt) error {
-		result = res.ColumnText(0)
-		return nil
-	})
+	stmt, err := conn.Prepare("PRAGMA integrity_check;")
+	if err != nil {
+		return fmt.Errorf("failed to prepare integrity_check statement: %w", err)
+	}
+	defer stmt.Close()
 
+	row, err := stmt.Step()
 	if err != nil {
 		return fmt.Errorf("failed to execute integrity_check: %w", err)
 	}
+	if !row {
+		return fmt.Errorf("integrity_check returned no rows")
+	}
 
+	result := stmt.ColumnText(0)
 	if result != "ok" {
 		return fmt.Errorf("integrity_check failed, result was: %s", result)
 	}
