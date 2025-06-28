@@ -34,6 +34,13 @@ func NewHandler(cfg *Config) *Handler {
 	}
 }
 
+func GenerateBlueprintConfig() Config {
+	return Config{
+		SourcePath: "/path/to/your/database.db",
+		BackupDir:  "/path/to/your/backups",
+	}
+}
+
 // Handle implements the JobHandler interface for database backups
 func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	// Define paths
