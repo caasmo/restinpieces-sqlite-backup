@@ -70,14 +70,14 @@ func main() {
 	}
 
 	newJob := db.Job{
-		Type:         JobTypeDbBackup,
+		JobType:      JobTypeDbBackup,
 		Payload:      payload,
 		ScheduledFor: scheduledForTime, // Use the time from the flag
 		Recurrent:    true,
-		Interval:     intervalDuration.String(),
+		Interval:     intervalDuration,
 	}
 
-	logger.Info("Inserting recurrent backup job into database", "type", newJob.Type, "interval", newJob.Interval, "scheduled_for", newJob.ScheduledFor)
+	logger.Info("Inserting recurrent backup job into database", "type", newJob.JobType, "interval", newJob.Interval, "scheduled_for", newJob.ScheduledFor)
 
 	// Insert the job using the DbQueue interface
 	if err := dbConn.InsertJob(newJob); err != nil {
