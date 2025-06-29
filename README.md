@@ -45,7 +45,7 @@ Deploying this add-on involves three main steps: configuring the job, inserting 
     ./insert-job \
       -dbpath /path/to/restinpieces.db \
       -interval 24h \
-      -scheduledFor 2025-07-01T10:00:00Z
+      -scheduled 2025-07-01T10:00:00Z
     ```
 
 3.  **Run the Application**: Start your main `restinpieces` application. It will load the configuration, register the backup handler, and automatically start executing the backup job at its scheduled time.
@@ -60,7 +60,8 @@ The tool must be run once to create the job. It requires three flags:
 
 -   `-dbpath`: The path to the main `restinpieces` SQLite database file.
 -   `-interval`: The interval for the recurrent backup job (e.g., `24h`, `1h30m`).
--   `-scheduledFor`: The start time for the job in RFC3339 format (e.g., `2025-07-01T10:00:00Z`). This determines when the first job will run.
+-   `-scheduled`: The start time for the job in RFC3339 format (e.g., `2025-07-01T10:00:00Z`). This determines when the first job will run.
+```
 
 ## Usage
 

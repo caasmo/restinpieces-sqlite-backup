@@ -21,11 +21,11 @@ func main() {
 
 	dbPath := flag.String("dbpath", "", "Path to the SQLite DB file (required)")
 	interval := flag.String("interval", "", "Interval for the recurrent backup job (e.g., '24h', '1h30m') (required)")
-	scheduledForStr := flag.String("scheduledFor", "", "Start time for the job in RFC3339 format (e.g., '2025-07-01T10:00:00Z') (required)")
+	scheduledStr := flag.String("scheduled", "", "Start time for the job in RFC3339 format (e.g., '2025-07-01T10:00:00Z') (required)")
 	flag.Parse()
 
-	if *dbPath == "" || *interval == "" || *scheduledForStr == "" {
-		fmt.Fprintln(os.Stderr, "Error: -dbpath, -interval, and -scheduledFor are required")
+	if *dbPath == "" || *interval == "" || *scheduledStr == "" {
+		fmt.Fprintln(os.Stderr, "Error: -dbpath, -interval, and -scheduled are required")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -38,9 +38,9 @@ func main() {
 	}
 
 	// Parse the scheduledFor string into a time.Time
-	scheduledForTime, err := time.Parse(time.RFC3339, *scheduledForStr)
+	scheduledTime, err := time.Parse(time.RFC3339, *scheduledStr)
 	if err != nil {
-		logger.Error("Invalid scheduledFor format. Use RFC3339 (e.g., '2025-07-01T10:00:00Z').", "error", err)
+		logger.Error("Invalid scheduled format. Use RFC3339 (e.g., '2025-07-01T10:00:00Z').", "error", err)
 		os.Exit(1)
 	}
 
@@ -72,7 +72,7 @@ func main() {
 	newJob := db.Job{
 		JobType:      JobTypeDbBackup,
 		Payload:      payload,
-		ScheduledFor: scheduledForTime, // Use the time from the flag
+		ScheduledFor: scheduledTime, // Use the time from the flag
 		Recurrent:    true,
 		Interval:     intervalDuration,
 	}
