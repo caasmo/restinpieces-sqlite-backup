@@ -24,11 +24,12 @@ const (
 
 // Config defines the settings for the backup job.
 type Config struct {
-	SourcePath    string        `toml:"source_path"`
-	BackupDir     string        `toml:"backup_dir"`
-	Strategy      string        `toml:"strategy"`
-	PagesPerStep  int           `toml:"pages_per_step"`
-	SleepInterval time.Duration `toml:"sleep_interval"`
+	SourcePath          string        `toml:"source_path"`
+	BackupDir           string        `toml:"backup_dir"`
+	Strategy            string        `toml:"strategy"`
+	PagesPerStep        int           `toml:"pages_per_step"`
+	SleepInterval       time.Duration `toml:"sleep_interval"`
+	ProgressLogInterval time.Duration `toml:"progress_log_interval"`
 }
 
 // Handler handles database backup jobs
@@ -51,11 +52,12 @@ func NewHandler(cfg *Config, logger *slog.Logger) *Handler {
 // GenerateBlueprintConfig creates a default configuration for a new setup.
 func GenerateBlueprintConfig() Config {
 	return Config{
-		SourcePath:    "/path/to/your/database.db",
-		BackupDir:     "/path/to/your/backups",
-		Strategy:      StrategyVacuum,
-		PagesPerStep:  100,
-		SleepInterval: 10 * time.Millisecond,
+		SourcePath:          "/path/to/your/database.db",
+		BackupDir:           "/path/to/your/backups",
+		Strategy:            StrategyVacuum,
+		PagesPerStep:        100,
+		SleepInterval:       10 * time.Millisecond,
+		ProgressLogInterval: 15 * time.Second,
 	}
 }
 
@@ -66,13 +68,11 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	backupDir := h.cfg.BackupDir
 	tempBackupPath := filepath.Join(os.TempDir(), fmt.Sprintf("backup-%d.db", time.Now().UnixNano()))
 
-	// Determine strategy for filename, defaulting to vacuum
 	strategyForFilename := h.cfg.Strategy
 	if strategyForFilename == "" {
 		strategyForFilename = StrategyVacuum
 	}
 
-	// Construct the improved filename
 	baseName := filepath.Base(sourceDbPath)
 	fileNameOnly := strings.TrimSuffix(baseName, filepath.Ext(baseName))
 	timestamp := time.Now().UTC().Format("2006-01-02T15-04-05Z")
@@ -88,7 +88,7 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	switch h.cfg.Strategy {
 	case StrategyOnline:
 		backupErr = h.onlineBackup(sourceDbPath, tempBackupPath)
-	case StrategyVacuum, "": // Default to "vacuum"
+	case StrategyVacuum, "":
 		backupErr = h.vacuumInto(sourceDbPath, tempBackupPath)
 	default:
 		return fmt.Errorf("unknown backup strategy: %q", h.cfg.Strategy)
@@ -112,6 +112,20 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	h.logger.Info("Successfully updated manifest file", "manifest", manifestPath)
 
 	h.logger.Info("Database backup process completed successfully")
+	return nil
+}
+
+// validateOnlineConfig checks if the configuration for the online strategy is valid.
+func (h *Handler) validateOnlineConfig() error {
+	if h.cfg.PagesPerStep <= 0 {
+		return fmt.Errorf("invalid configuration for online backup: pages_per_step must be a positive value, but was %d", h.cfg.PagesPerStep)
+	}
+	if h.cfg.SleepInterval < 0 {
+		return fmt.Errorf("invalid configuration for online backup: sleep_interval cannot be negative, but was %v", h.cfg.SleepInterval)
+	}
+	if h.cfg.ProgressLogInterval <= 0 {
+		return fmt.Errorf("invalid configuration for online backup: progress_log_interval must be a positive duration, but was %v", h.cfg.ProgressLogInterval)
+	}
 	return nil
 }
 
@@ -139,14 +153,14 @@ func (h *Handler) vacuumInto(sourcePath, destPath string) error {
 // onlineBackup performs a live backup using the SQLite Online Backup API.
 func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 	h.logger.Info("Starting 'online' backup. This may take longer but will not block writers.")
+
+	if err := h.validateOnlineConfig(); err != nil {
+		return err
+	}
+
 	pagesPerStep := h.cfg.PagesPerStep
-	if pagesPerStep <= 0 {
-		pagesPerStep = 100
-	}
 	sleepInterval := h.cfg.SleepInterval
-	if sleepInterval < 0 {
-		sleepInterval = 10 * time.Millisecond
-	}
+	progressLogInterval := h.cfg.ProgressLogInterval
 
 	srcConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
@@ -170,12 +184,20 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 		}
 	}()
 
-	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval)
+	lastLogTime := time.Now()
+	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval, "progress_log_interval", progressLogInterval)
+
 	for {
 		done, err := backup.Step(pagesPerStep)
 		if err != nil {
 			return fmt.Errorf("backup step failed: %w", err)
 		}
+
+		if time.Since(lastLogTime) >= progressLogInterval {
+			h.logBackupProgress(backup)
+			lastLogTime = time.Now()
+		}
+
 		if done {
 			h.logger.Info("Online backup copy completed successfully.")
 			return nil
@@ -183,6 +205,22 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 		if sleepInterval > 0 {
 			time.Sleep(sleepInterval)
 		}
+	}
+}
+
+// logBackupProgress calculates and logs the progress of an online backup.
+func (h *Handler) logBackupProgress(backup *sqlite.Backup) {
+	totalPages := backup.PageCount()
+	if totalPages > 0 {
+		remainingPages := backup.Remaining()
+		donePages := totalPages - remainingPages
+		progress := (float64(donePages) / float64(totalPages)) * 100.0
+
+		h.logger.Info("Online backup in progress",
+			"progress_percent", fmt.Sprintf("%.2f%%", progress),
+			"pages_copied", donePages,
+			"total_pages", totalPages,
+		)
 	}
 }
 
