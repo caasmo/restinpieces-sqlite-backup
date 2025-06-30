@@ -247,3 +247,29 @@ func (h *Handler) compressFile(sourcePath, destPath string) error {
 
 	return nil
 }
+
+// Duration is a wrapper around time.Duration that supports TOML marshalling
+// to and from a string value (e.g., "3h", "15m", "1h30m").
+type Duration struct {
+	time.Duration
+}
+
+// UnmarshalText implements the encoding.TextUnmarshaler interface.
+// This allows TOML libraries like pelletier/go-toml/v2 to unmarshal
+// TOML string values directly into a Duration field.
+func (d *Duration) UnmarshalText(text []byte) error {
+	var err error
+	d.Duration, err = time.ParseDuration(string(text))
+	if err != nil {
+		// Provide more context in the error message
+		return fmt.Errorf("failed to parse duration '%s': %w", string(text), err)
+	}
+	return nil
+}
+
+// MarshalText implements the encoding.TextMarshaler interface.
+// This ensures that when the config is marshaled back to TOML,
+// durations are written as human-readable strings.
+func (d Duration) MarshalText() ([]byte, error) {
+	return []byte(d.Duration.String()), nil
+}
