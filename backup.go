@@ -186,13 +186,13 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 			return fmt.Errorf("backup step failed: %w", err)
 		}
 
-		logger.Log(backup)
-
 		if !more {
 			logger.LogFinal(backup)
 			h.logger.Info("Online backup copy completed successfully.")
 			return nil
 		}
+
+		logger.Log(backup)
 
 		if sleepInterval > 0 {
 			time.Sleep(sleepInterval)
