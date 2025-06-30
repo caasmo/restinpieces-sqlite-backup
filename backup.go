@@ -1,3 +1,4 @@
+
 package sqlitebackup
 
 import (
@@ -8,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/caasmo/restinpieces/db"
@@ -22,10 +24,10 @@ const (
 
 // Config defines the settings for the backup job.
 type Config struct {
-	SourcePath string `toml:"source_path"`
-	BackupDir  string `toml:"backup_dir"`
-	Strategy   string `toml:"strategy"`
-	PagesPerStep  int `toml:"pages_per_step"`
+	SourcePath    string        `toml:"source_path"`
+	BackupDir     string        `toml:"backup_dir"`
+	Strategy      string        `toml:"strategy"`
+	PagesPerStep  int           `toml:"pages_per_step"`
 	SleepInterval time.Duration `toml:"sleep_interval"`
 }
 
@@ -59,18 +61,29 @@ func GenerateBlueprintConfig() Config {
 
 // Handle implements the JobHandler interface for database backups
 func (h *Handler) Handle(ctx context.Context, job db.Job) error {
-	// Define paths
+	// --- Define Paths and Filenames ---
 	sourceDbPath := h.cfg.SourcePath
 	backupDir := h.cfg.BackupDir
 	tempBackupPath := filepath.Join(os.TempDir(), fmt.Sprintf("backup-%d.db", time.Now().UnixNano()))
+
+	// Determine strategy for filename, defaulting to vacuum
+	strategyForFilename := h.cfg.Strategy
+	if strategyForFilename == "" {
+		strategyForFilename = StrategyVacuum
+	}
+
+	// Construct the improved filename
+	baseName := filepath.Base(sourceDbPath)
+	fileNameOnly := strings.TrimSuffix(baseName, filepath.Ext(baseName))
 	timestamp := time.Now().UTC().Format("2006-01-02T15-04-05Z")
-	finalBackupName := fmt.Sprintf("db-backup-%s.db.gz", timestamp)
+	finalBackupName := fmt.Sprintf("%s-%s-%s.bck.gz", fileNameOnly, timestamp, strategyForFilename)
+
 	finalBackupPath := filepath.Join(backupDir, finalBackupName)
 	manifestPath := filepath.Join(backupDir, "latest.txt")
 
-	h.logger.Info("Starting database backup process", "source", sourceDbPath, "strategy", h.cfg.Strategy)
+	h.logger.Info("Starting database backup process", "source", sourceDbPath, "strategy", h.cfg.Strategy, "destination", finalBackupPath)
 
-	// Dispatch to the chosen backup strategy
+	// --- Dispatch to the chosen backup strategy ---
 	var backupErr error
 	switch h.cfg.Strategy {
 	case StrategyOnline:
@@ -87,13 +100,12 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	defer os.Remove(tempBackupPath)
 	h.logger.Info("Successfully created temporary backup database", "path", tempBackupPath)
 
-	// Gzip the temporary file
+	// --- Gzip and Finalize ---
 	if err := h.compressFile(tempBackupPath, finalBackupPath); err != nil {
 		return fmt.Errorf("failed to gzip backup file: %w", err)
 	}
 	h.logger.Info("Successfully compressed backup", "path", finalBackupPath)
 
-	// Update the manifest file
 	if err := os.WriteFile(manifestPath, []byte(finalBackupName), 0644); err != nil {
 		return fmt.Errorf("failed to update manifest file: %w", err)
 	}
