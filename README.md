@@ -8,9 +8,9 @@ This handler supports two distinct backup strategies (`vacuum` and `online`) to 
 
 The solution is composed of two main components:
 
-1.  **The Backup Job (Server-side)**: This component runs as a job within a `restinpieces` application. It periodically creates a compressed backup of a specified SQLite database and stores it locally on the server. It also maintains a `latest.txt` manifest file, which always points to the most recent backup.
+1.  **The Backup Job (Server-side)**: This component runs as a job within a `restinpieces` application. It periodically creates a compressed backup of a specified SQLite database and stores it locally on the server. An example of how to integrate the job can be found in **[cmd/example](https://github.com/caasmo/restinpieces-sqlite-backup/tree/master/cmd/example)**.
 
-2.  **The Pull Client (Client-side)**: This is a standalone command-line binary that can be run on any client machine. It connects to the server via SFTP, reads the `latest.txt` manifest to find the newest backup, downloads it, and verifies its integrity.
+2.  **The Pull Client (Client-side)**: This is a standalone command-line binary that can be run on any client machine. It connects to the server via SFTP, finds the latest backup by filename, downloads it, and verifies its integrity. A reference implementation is available in **[cmd/client](https://github.com/caasmo/restinpieces-sqlite-backup/tree/master/cmd/client)**.
 
 This design decouples backup creation from retrieval, allowing backups to be pulled from a central server to any number of client machines.
 
@@ -19,8 +19,7 @@ This design decouples backup creation from retrieval, allowing backups to be pul
 -   **Flexible Backup Strategies**: Choose between a fast, locking `vacuum` strategy or a non-locking `online` strategy.
 -   **Push-Pull Design**: Decouples backup creation (server-side) from retrieval (client-side).
 -   **Gzip Compression**: Compresses backup files.
--   **Descriptive Filenames**: Embeds the database name, timestamp, and strategy into filenames (e.g., `app-2025-07-01T10-30-00Z-vacuum.bck.gz`).
--   **Manifest File**: A `latest.txt` file points to the latest backup for easy retrieval.
+-   **Descriptive Filenames**: Embeds the database name, timestamp, and strategy into filenames (e.g., `app-2025-07-01T10-30-00Z-vacuum.bck.gz`), which are used to determine the latest backup.
 -   **SFTP Client**: A client is provided to pull backups from a remote server.
 -   **Backup Verification**: The client verifies the integrity of downloaded backups using `PRAGMA integrity_check`.
 
