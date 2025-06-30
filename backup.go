@@ -119,7 +119,6 @@ func (h *Handler) validateOnlineConfig() error {
 
 // vacuumInto creates a clean, defragmented copy of the database.
 func (h *Handler) vacuumInto(sourcePath, destPath string) error {
-	h.logger.Info("Starting 'vacuum' backup. Writers will be blocked during this operation.")
 	sourceConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
 		return fmt.Errorf("failed to open source db for vacuum: %w", err)
