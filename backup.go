@@ -139,7 +139,6 @@ func (h *Handler) vacuumInto(sourcePath, destPath string) error {
 
 // onlineBackup performs a live backup using the SQLite Online Backup API.
 func (h *Handler) onlineBackup(sourcePath, destPath string) error {
-	h.logger.Info("Starting 'online' backup. This may take longer but will not block writers.")
 
 	if err := h.validateOnlineConfig(); err != nil {
 		return err
