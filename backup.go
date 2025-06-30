@@ -1,4 +1,3 @@
-
 package sqlitebackup
 
 import (
@@ -24,12 +23,11 @@ const (
 
 // Config defines the settings for the backup job.
 type Config struct {
-	SourcePath          string   `toml:"source_path"`
-	BackupDir           string   `toml:"backup_dir"`
-	Strategy            string   `toml:"strategy"`
-	PagesPerStep        int      `toml:"pages_per_step"`
-	SleepInterval       Duration `toml:"sleep_interval"`
-	ProgressLogInterval Duration `toml:"progress_log_interval"`
+	SourcePath    string   `toml:"source_path"`
+	BackupDir     string   `toml:"backup_dir"`
+	Strategy      string   `toml:"strategy"`
+	PagesPerStep  int      `toml:"pages_per_step"`
+	SleepInterval Duration `toml:"sleep_interval"`
 }
 
 // Handler handles database backup jobs
@@ -52,12 +50,11 @@ func NewHandler(cfg *Config, logger *slog.Logger) *Handler {
 // GenerateBlueprintConfig creates a default configuration for a new setup.
 func GenerateBlueprintConfig() Config {
 	return Config{
-		SourcePath:          "/path/to/your/database.db",
-		BackupDir:           "/path/to/your/backups",
-		Strategy:            StrategyOnline, // Default to the safer, non-locking strategy
-		PagesPerStep:        100,
-		SleepInterval:       Duration{Duration: 10 * time.Millisecond},
-		ProgressLogInterval: Duration{Duration: 15 * time.Second},
+		SourcePath:    "/path/to/your/database.db",
+		BackupDir:     "/path/to/your/backups",
+		Strategy:      StrategyOnline,
+		PagesPerStep:  100,
+		SleepInterval: Duration{Duration: 10 * time.Millisecond},
 	}
 }
 
@@ -70,7 +67,7 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 
 	strategyForFilename := h.cfg.Strategy
 	if strategyForFilename == "" {
-		strategyForFilename = StrategyVacuum
+		strategyForFilename = StrategyOnline
 	}
 
 	baseName := filepath.Base(sourceDbPath)
@@ -87,7 +84,7 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	switch h.cfg.Strategy {
 	case StrategyVacuum:
 		backupErr = h.vacuumInto(sourceDbPath, tempBackupPath)
-	case StrategyOnline, "": // Default to "online" if the field is missing or empty
+	case StrategyOnline, "":
 		backupErr = h.onlineBackup(sourceDbPath, tempBackupPath)
 	default:
 		return fmt.Errorf("unknown backup strategy: %q", h.cfg.Strategy)
@@ -116,9 +113,6 @@ func (h *Handler) validateOnlineConfig() error {
 	}
 	if h.cfg.SleepInterval.Duration < 0 {
 		return fmt.Errorf("invalid configuration for online backup: sleep_interval cannot be negative, but was %v", h.cfg.SleepInterval)
-	}
-	if h.cfg.ProgressLogInterval.Duration <= 0 {
-		return fmt.Errorf("invalid configuration for online backup: progress_log_interval must be a positive duration, but was %v", h.cfg.ProgressLogInterval)
 	}
 	return nil
 }
@@ -154,7 +148,6 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 
 	pagesPerStep := h.cfg.PagesPerStep
 	sleepInterval := h.cfg.SleepInterval.Duration
-	progressLogInterval := h.cfg.ProgressLogInterval.Duration
 
 	srcConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
@@ -178,22 +171,38 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 		}
 	}()
 
-	lastLogTime := time.Now()
-	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval, "progress_log_interval", progressLogInterval)
+	// --- Page-Based Progress Logging Setup ---
+	if _, err := backup.Step(0); err != nil { // Step(0) initializes page counts
+		return fmt.Errorf("backup step(0) failed: %w", err)
+	}
+	totalPages := backup.PageCount()
+	if totalPages == 0 {
+		h.logger.Info("Source database is empty. Backup completed immediately.")
+		return nil
+	}
+
+	const numLogPoints = 10
+	logPageInterval := totalPages / numLogPoints
+	if logPageInterval == 0 {
+		logPageInterval = 1
+	}
+	nextLogTarget := totalPages - logPageInterval
+
+	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval, "total_pages", totalPages)
 
 	for {
-		// Step returns true if there are more pages to copy.
 		more, err := backup.Step(pagesPerStep)
 		if err != nil {
 			return fmt.Errorf("backup step failed: %w", err)
 		}
 
-		if time.Since(lastLogTime) >= progressLogInterval {
+		if backup.Remaining() <= nextLogTarget {
 			h.logBackupProgress(backup)
-			lastLogTime = time.Now()
+			nextLogTarget = backup.Remaining() - logPageInterval
 		}
 
 		if !more {
+			h.logBackupProgress(backup) // Log one final time to show 100%
 			h.logger.Info("Online backup copy completed successfully.")
 			return nil
 		}
@@ -251,21 +260,16 @@ type Duration struct {
 }
 
 // UnmarshalText implements the encoding.TextUnmarshaler interface.
-// This allows TOML libraries like pelletier/go-toml/v2 to unmarshal
-// TOML string values directly into a Duration field.
 func (d *Duration) UnmarshalText(text []byte) error {
 	var err error
 	d.Duration, err = time.ParseDuration(string(text))
 	if err != nil {
-		// Provide more context in the error message
 		return fmt.Errorf("failed to parse duration '%s': %w", string(text), err)
 	}
 	return nil
 }
 
 // MarshalText implements the encoding.TextMarshaler interface.
-// This ensures that when the config is marshaled back to TOML,
-// durations are written as human-readable strings.
 func (d Duration) MarshalText() ([]byte, error) {
 	return []byte(d.Duration.String()), nil
 }

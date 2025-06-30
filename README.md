@@ -43,7 +43,6 @@ Deploying this add-on involves three main steps: configuring the job, inserting 
     strategy = "online"
     pages_per_step = 200
     sleep_interval = "20ms"
-    progress_log_interval = "30s"
     ```
 
 2.  **Insert the Recurrent Job**: Use the `insert-job` tool provided in this repository to create the recurrent job entry in the database. This only needs to be done once.
@@ -95,7 +94,6 @@ The `online` strategy can be tuned with the following parameters in your TOML co
 
 -   `pages_per_step` (integer, default: `100`): How many pages to copy in a single step. A smaller value is "politer" to other connections but increases overhead.
 -   `sleep_interval` (duration, default: `"10ms"`): How long to pause between steps to yield system resources. A value of `"0s"` will run the backup as fast as possible, while a higher value will reduce its CPU/IO impact.
--   `progress_log_interval` (duration, default: `"15s"`): How often to log backup progress.
 
 ## Tools and Examples
 
