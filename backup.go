@@ -1,4 +1,3 @@
-
 package sqlitebackup
 
 import (
@@ -6,20 +5,36 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
-	"log/slog"
 
 	"github.com/caasmo/restinpieces/db"
 	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
-const ScopeDbBackup = "sqlite_backup"
+const (
+	ScopeDbBackup  = "sqlite_backup"
+	StrategyVacuum = "vacuum"
+	StrategyOnline = "online"
+)
 
+// Config defines the settings for the backup job.
 type Config struct {
 	SourcePath string `toml:"source_path"`
 	BackupDir  string `toml:"backup_dir"`
+
+	// Strategy defines the backup method to use.
+	// "vacuum" (default): Fast, but locks writers. Good for low-write DBs or off-peak backups.
+	// "online": Slower, but non-locking. Good for high-write, 24/7 DBs.
+	Strategy string `toml:"strategy"`
+
+	// PagesPerStep is the number of pages to copy in one step for the "online" strategy.
+	PagesPerStep int `toml:"pages_per_step"`
+	// SleepInterval is the duration to pause between steps in the "online" strategy.
+	SleepInterval time.Duration `toml:"sleep_interval"`
 }
 
 // Handler handles database backup jobs
@@ -34,10 +49,14 @@ func NewHandler(cfg *Config) *Handler {
 	}
 }
 
+// GenerateBlueprintConfig creates a default configuration for a new setup.
 func GenerateBlueprintConfig() Config {
 	return Config{
-		SourcePath: "/path/to/your/database.db",
-		BackupDir:  "/path/to/your/backups",
+		SourcePath:    "/path/to/your/database.db",
+		BackupDir:     "/path/to/your/backups",
+		Strategy:      StrategyVacuum, // Default to the simpler, locking strategy
+		PagesPerStep:  100,
+		SleepInterval: 10 * time.Millisecond,
 	}
 }
 
@@ -52,47 +71,50 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	finalBackupPath := filepath.Join(backupDir, finalBackupName)
 	manifestPath := filepath.Join(backupDir, "latest.txt")
 
-	slog.Info("Starting database backup process", "source", sourceDbPath, "destination", finalBackupPath)
+	slog.Info("Starting database backup process", "source", sourceDbPath, "strategy", h.cfg.Strategy)
 
-	// 1. Perform VACUUM INTO a temporary file
-	if err := h.vacuumInto(sourceDbPath, tempBackupPath); err != nil {
-		return fmt.Errorf("failed to perform vacuum into: %w", err)
+	// Dispatch to the chosen backup strategy
+	var backupErr error
+	switch h.cfg.Strategy {
+	case StrategyOnline:
+		backupErr = h.onlineBackup(sourceDbPath, tempBackupPath)
+	case StrategyVacuum, "": // Default to "vacuum" if the field is missing or empty
+		backupErr = h.vacuumInto(sourceDbPath, tempBackupPath)
+	default:
+		return fmt.Errorf("unknown backup strategy: %q", h.cfg.Strategy)
 	}
-	defer os.Remove(tempBackupPath) // Ensure temp file is cleaned up
 
-	slog.Info("Successfully created temporary vacuumed database", "path", tempBackupPath)
+	if backupErr != nil {
+		return fmt.Errorf("backup creation failed: %w", backupErr)
+	}
+	defer os.Remove(tempBackupPath)
+	slog.Info("Successfully created temporary backup database", "path", tempBackupPath)
 
-	// 2. Gzip the temporary file to its final destination
+	// Gzip the temporary file to its final destination
 	if err := h.compressFile(tempBackupPath, finalBackupPath); err != nil {
 		return fmt.Errorf("failed to gzip backup file: %w", err)
 	}
-
 	slog.Info("Successfully compressed backup", "path", finalBackupPath)
 
-	// 3. Update the manifest file
+	// Update the manifest file
 	if err := os.WriteFile(manifestPath, []byte(finalBackupName), 0644); err != nil {
 		return fmt.Errorf("failed to update manifest file: %w", err)
 	}
-
 	slog.Info("Successfully updated manifest file", "manifest", manifestPath)
-
-	// (Optional) 4. Clean up old backups
-	// This part can be added later if needed.
 
 	slog.Info("Database backup process completed successfully")
 	return nil
 }
 
-// vacuumInto creates a clean copy of the database using VACUUM INTO.
+// vacuumInto creates a clean, defragmented copy of the database. It locks writers for its entire duration.
 func (h *Handler) vacuumInto(sourcePath, destPath string) error {
-	// Open a read-only connection to the source database.
+	slog.Info("Starting 'vacuum' backup. Writers will be blocked during this operation.")
 	sourceConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
 		return fmt.Errorf("failed to open source db for vacuum: %w", err)
 	}
 	defer sourceConn.Close()
 
-	// Execute the VACUUM INTO command. The destination path must be a single-quoted string literal.
 	stmt, err := sourceConn.Prepare(fmt.Sprintf("VACUUM INTO '%s';", destPath))
 	if err != nil {
 		return fmt.Errorf("failed to prepare vacuum statement: %w", err)
@@ -102,8 +124,53 @@ func (h *Handler) vacuumInto(sourcePath, destPath string) error {
 	if _, err := stmt.Step(); err != nil {
 		return fmt.Errorf("failed to execute vacuum statement: %w", err)
 	}
-
 	return nil
+}
+
+// onlineBackup performs a live backup using the SQLite Online Backup API. It is non-locking but slower.
+func (h *Handler) onlineBackup(sourcePath, destPath string) error {
+	slog.Info("Starting 'online' backup. This may take longer but will not block writers.")
+	pagesPerStep := h.cfg.PagesPerStep
+	if pagesPerStep <= 0 {
+		pagesPerStep = 100 // Sensible default
+	}
+	sleepInterval := h.cfg.SleepInterval
+	if sleepInterval < 0 {
+		sleepInterval = 10 * time.Millisecond // Sensible default
+	}
+
+	srcConn, err := sqlitex.Open(sourcePath, sqlite.OpenReadOnly, "")
+	if err != nil {
+		return fmt.Errorf("failed to open source db for online backup: %w", err)
+	}
+	defer srcConn.Close()
+
+	destConn, err := sqlitex.Open(destPath, sqlite.OpenCreate|sqlite.OpenReadWrite, "")
+	if err != nil {
+		return fmt.Errorf("failed to create destination db for online backup: %w", err)
+	}
+	defer destConn.Close()
+
+	backup, err := sqlitex.NewBackup(destConn, "main", srcConn, "main")
+	if err != nil {
+		return fmt.Errorf("failed to initialize backup: %w", err)
+	}
+	defer backup.Finish()
+
+	slog.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval)
+	for {
+		done, err := backup.Step(pagesPerStep)
+		if err != nil {
+			return fmt.Errorf("backup step failed: %w", err)
+		}
+		if done {
+			slog.Info("Online backup copy completed successfully.")
+			return nil
+		}
+		if sleepInterval > 0 {
+			time.Sleep(sleepInterval)
+		}
+	}
 }
 
 // compressFile reads a source file, compresses it with gzip, and writes to a destination file.
