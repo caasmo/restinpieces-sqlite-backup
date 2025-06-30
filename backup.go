@@ -1,4 +1,3 @@
-
 package sqlitebackup
 
 import (
@@ -13,7 +12,6 @@ import (
 
 	"github.com/caasmo/restinpieces/db"
 	"zombiezen.com/go/sqlite"
-	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 const (
@@ -138,23 +136,27 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 		sleepInterval = 10 * time.Millisecond
 	}
 
-	srcConn, err := sqlitex.Open(sourcePath, sqlite.OpenReadOnly, "")
+	srcConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
 		return fmt.Errorf("failed to open source db for online backup: %w", err)
 	}
 	defer srcConn.Close()
 
-	destConn, err := sqlitex.Open(destPath, sqlite.OpenCreate|sqlite.OpenReadWrite, "")
+	destConn, err := sqlite.OpenConn(destPath, sqlite.OpenCreate|sqlite.OpenReadWrite)
 	if err != nil {
 		return fmt.Errorf("failed to create destination db for online backup: %w", err)
 	}
 	defer destConn.Close()
 
-	backup, err := sqlitex.NewBackup(destConn, "main", srcConn, "main")
+	backup, err := sqlite.NewBackup(destConn, "main", srcConn, "main")
 	if err != nil {
 		return fmt.Errorf("failed to initialize backup: %w", err)
 	}
-	defer backup.Finish()
+	defer func() {
+		if err := backup.Close(); err != nil {
+			h.logger.Error("error closing backup resource", "error", err)
+		}
+	}()
 
 	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval)
 	for {
