@@ -85,7 +85,7 @@ func main() {
 	logger.Info("Successfully unmarshalled DB backup config", "scope", sqlitebackup.ScopeDbBackup)
 
 	// --- Create and Register Backup Handler ---
-	dbBackupHandler := sqlitebackup.NewHandler(&backupCfg)
+	dbBackupHandler := sqlitebackup.NewHandler(&backupCfg, logger)
 	err = srv.AddJobHandler(JobTypeDbBackup, dbBackupHandler)
 	if err != nil {
 		logger.Error("Failed to register database backup job handler", "job_type", JobTypeDbBackup, "error", err)
