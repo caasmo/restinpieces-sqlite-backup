@@ -1,9 +1,7 @@
 package main
 
 import (
-	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 
 	sqlitebackup "github.com/caasmo/restinpieces-sqlite-backup"
@@ -11,41 +9,20 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	// Get the default configuration from the package
+	blueprint := sqlitebackup.GenerateBlueprintConfig()
 
-	outputFileFlag := flag.String("output", "backup.blueprint.toml", "Output file path for the blueprint TOML configuration")
-	flag.StringVar(outputFileFlag, "o", "backup.blueprint.toml", "Output file path (shorthand)")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Generates a blueprint backup TOML configuration file with example values.\n")
-		fmt.Fprintf(os.Stderr, "Remember to replace placeholder values.\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
-	}
-
-	flag.Parse()
-
-	logger.Info("Generating backup blueprint configuration...")
-	blueprintCfg := sqlitebackup.GenerateBlueprintConfig()
-
-	logger.Info("Marshalling configuration to TOML...")
-	tomlBytes, err := toml.Marshal(blueprintCfg)
+	// Marshal the blueprint struct to a TOML-formatted byte slice.
+	// The custom Duration type ensures durations are marshaled as strings.
+	tomlBytes, err := toml.Marshal(blueprint)
 	if err != nil {
-		logger.Error("Failed to marshal blueprint config to TOML", "error", err)
+		fmt.Fprintf(os.Stderr, "Error encoding TOML: %v\n", err)
 		os.Exit(1)
 	}
 
-	logger.Info("Writing blueprint configuration", "path", *outputFileFlag)
-	err = os.WriteFile(*outputFileFlag, tomlBytes, 0644)
-	if err != nil {
-		logger.Error("Failed to write blueprint config file",
-			"path", *outputFileFlag,
-			"error", err)
-		os.Exit(1)
-	}
-
-	logger.Info("Backup blueprint configuration generated successfully", "path", *outputFileFlag)
+	fmt.Println("# Default configuration for the sqlite_backup job.")
+	fmt.Println("# Save this content and use the restinpieces framework to securely store it")
+	fmt.Println("# under the scope 'sqlite_backup'.")
+	fmt.Println()
+	fmt.Println(string(tomlBytes))
 }

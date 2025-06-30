@@ -24,12 +24,12 @@ const (
 
 // Config defines the settings for the backup job.
 type Config struct {
-	SourcePath          string        `toml:"source_path"`
-	BackupDir           string        `toml:"backup_dir"`
-	Strategy            string        `toml:"strategy"`
-	PagesPerStep        int           `toml:"pages_per_step"`
-	SleepInterval       time.Duration `toml:"sleep_interval"`
-	ProgressLogInterval time.Duration `toml:"progress_log_interval"`
+	SourcePath          string   `toml:"source_path"`
+	BackupDir           string   `toml:"backup_dir"`
+	Strategy            string   `toml:"strategy"`
+	PagesPerStep        int      `toml:"pages_per_step"`
+	SleepInterval       Duration `toml:"sleep_interval"`
+	ProgressLogInterval Duration `toml:"progress_log_interval"`
 }
 
 // Handler handles database backup jobs
@@ -56,8 +56,8 @@ func GenerateBlueprintConfig() Config {
 		BackupDir:           "/path/to/your/backups",
 		Strategy:            StrategyVacuum,
 		PagesPerStep:        100,
-		SleepInterval:       10 * time.Millisecond,
-		ProgressLogInterval: 15 * time.Second,
+		SleepInterval:       Duration{Duration: 10 * time.Millisecond},
+		ProgressLogInterval: Duration{Duration: 15 * time.Second},
 	}
 }
 
@@ -120,10 +120,10 @@ func (h *Handler) validateOnlineConfig() error {
 	if h.cfg.PagesPerStep <= 0 {
 		return fmt.Errorf("invalid configuration for online backup: pages_per_step must be a positive value, but was %d", h.cfg.PagesPerStep)
 	}
-	if h.cfg.SleepInterval < 0 {
+	if h.cfg.SleepInterval.Duration < 0 {
 		return fmt.Errorf("invalid configuration for online backup: sleep_interval cannot be negative, but was %v", h.cfg.SleepInterval)
 	}
-	if h.cfg.ProgressLogInterval <= 0 {
+	if h.cfg.ProgressLogInterval.Duration <= 0 {
 		return fmt.Errorf("invalid configuration for online backup: progress_log_interval must be a positive duration, but was %v", h.cfg.ProgressLogInterval)
 	}
 	return nil
@@ -159,8 +159,8 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 	}
 
 	pagesPerStep := h.cfg.PagesPerStep
-	sleepInterval := h.cfg.SleepInterval
-	progressLogInterval := h.cfg.ProgressLogInterval
+	sleepInterval := h.cfg.SleepInterval.Duration
+	progressLogInterval := h.cfg.ProgressLogInterval.Duration
 
 	srcConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
