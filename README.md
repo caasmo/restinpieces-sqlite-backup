@@ -49,11 +49,11 @@ Deploying this add-on involves three main steps: configuring the job, inserting 
 
 2.  **Insert the Recurrent Job**: Use the `insert-job` tool provided in this repository to create the recurrent job entry in the database. This only needs to be done once.
     ```bash
-    go build ./cmd/insert-job
-    ./insert-job \
-      -dbpath /path/to/restinpieces.db \
-      -interval 24h \
-      -scheduled 2025-07-01T10:00:00Z
+go build ./cmd/insert-job
+./insert-job \
+  -dbpath /path/to/restinpieces.db \
+  -interval 24h \
+  -scheduled 2025-07-01T10:00:00Z
     ```
 
 3.  **Run the Application**: Start your main `restinpieces` application. It will load the configuration, register the backup handler, and automatically start executing the backup job at its scheduled time.
@@ -98,17 +98,20 @@ The `online` strategy can be tuned with the following parameters in your TOML co
 -   `sleep_interval` (duration, default: `"10ms"`): How long to pause between steps to yield system resources. A value of `"0s"` will run the backup as fast as possible, while a higher value will reduce its CPU/IO impact.
 -   `progress_log_interval` (duration, default: `"15s"`): How often to log backup progress.
 
-## The `insert-job` Tool
+## Tools and Examples
 
-This repository includes a small command-line tool located at `cmd/insert-job/main.go` specifically for activating the recurrent backup job. Because `restinpieces-sqlite-backup` is an optional add-on, the core application is not aware of it, so this tool is required to insert the job into the database without modifying the core application's code.
+This repository contains several `cmd` utilities that serve as tools and examples.
 
-### Usage
+-   **[cmd/example](https://github.com/caasmo/restinpieces-sqlite-backup/tree/master/cmd/example)**: A fully working example of a `restinpieces` server that registers and runs the backup handler. This is the primary reference for integrating the handler into your own application.
 
-The tool must be run once to create the job. It requires three flags:
+-   **[cmd/generate-blueprint-config](https://github.com/caasmo/restinpieces-sqlite-backup/tree/master/cmd/generate-blueprint-config)**: A simple tool that prints a template TOML configuration file to the console. This is useful for getting started with the configuration.
+    ```bash
+go run ./cmd/generate-blueprint-config
+    ```
 
--   `-dbpath`: The path to the main `restinpieces` SQLite database file.
--   `-interval`: The interval for the recurrent backup job (e.g., `24h`, `1h30m`).
--   `-scheduled`: The start time for the job in RFC3339 format (e.g., `2025-07-01T10:00:00Z`). This determines when the first job will run.
+-   **[cmd/insert-job](https://github.com/caasmo/restinpieces-sqlite-backup/tree/master/cmd/insert-job)**: The command-line tool used to insert the recurrent backup job into the database. See the "Deployment Workflow" section for usage details.
+
+-   **[cmd/client](https://github.com/caasmo/restinpieces-sqlite-backup/tree/master/cmd/client)**: An example of a client-side binary that connects to the server via SFTP to pull the latest backup. This can be adapted to your specific needs for retrieving backups.
 
 ## License
 
