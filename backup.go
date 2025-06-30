@@ -182,7 +182,8 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval, "progress_log_interval", progressLogInterval)
 
 	for {
-		done, err := backup.Step(pagesPerStep)
+		// Step returns true if there are more pages to copy.
+		more, err := backup.Step(pagesPerStep)
 		if err != nil {
 			return fmt.Errorf("backup step failed: %w", err)
 		}
@@ -192,10 +193,11 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 			lastLogTime = time.Now()
 		}
 
-		if done {
+		if !more {
 			h.logger.Info("Online backup copy completed successfully.")
 			return nil
 		}
+
 		if sleepInterval > 0 {
 			time.Sleep(sleepInterval)
 		}
