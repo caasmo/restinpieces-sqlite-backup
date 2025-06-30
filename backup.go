@@ -92,8 +92,8 @@ func (h *Handler) vacuumInto(sourcePath, destPath string) error {
 	}
 	defer sourceConn.Close()
 
-	// Execute the VACUUM INTO command.
-	stmt, err := sourceConn.Prepare(fmt.Sprintf("VACUUM INTO %q;", destPath))
+	// Execute the VACUUM INTO command. The destination path must be a single-quoted string literal.
+	stmt, err := sourceConn.Prepare(fmt.Sprintf("VACUUM INTO '%s';", destPath))
 	if err != nil {
 		return fmt.Errorf("failed to prepare vacuum statement: %w", err)
 	}
