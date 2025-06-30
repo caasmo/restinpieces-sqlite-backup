@@ -168,24 +168,17 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 		}
 	}()
 
-	// --- Page-Based Progress Logging Setup ---
-	if _, err := backup.Step(0); err != nil {
-		return fmt.Errorf("backup step(0) failed: %w", err)
+	// Initialize the progress logger
+	logger, err := newModuloLogger(h.logger, backup)
+	if err != nil {
+		return err
 	}
-	totalPages := backup.PageCount()
-	if totalPages == 0 {
+	if logger == nil { // This happens if the database is empty
 		h.logger.Info("Source database is empty. Backup completed immediately.")
 		return nil
 	}
 
-	const numLogPoints = 10
-	logPageInterval := totalPages / numLogPoints
-	if logPageInterval == 0 {
-		logPageInterval = 1
-	}
-	nextLogTarget := logPageInterval
-
-	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval, "total_pages", totalPages)
+	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval, "total_pages", logger.totalPages)
 
 	for {
 		more, err := backup.Step(pagesPerStep)
@@ -193,14 +186,10 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 			return fmt.Errorf("backup step failed: %w", err)
 		}
 
-		copiedPages := totalPages - backup.Remaining()
-		if copiedPages >= nextLogTarget {
-			h.logBackupProgress(backup)
-			nextLogTarget += logPageInterval
-		}
+		logger.Log(backup)
 
 		if !more {
-			h.logBackupProgress(backup) // Log one final time to show completion
+			logger.LogFinal(backup)
 			h.logger.Info("Online backup copy completed successfully.")
 			return nil
 		}
@@ -211,18 +200,64 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 	}
 }
 
-// logBackupProgress calculates and logs the progress of an online backup.
-func (h *Handler) logBackupProgress(backup *sqlite.Backup) {
+// --- Modulo Logger ---
+
+// moduloLogger encapsulates the logic for logging backup progress.
+type moduloLogger struct {
+	logger          *slog.Logger
+	totalPages      int
+	logPageInterval int
+	nextLogTarget   int
+}
+
+// newModuloLogger creates and initializes a progress logger.
+func newModuloLogger(logger *slog.Logger, backup *sqlite.Backup) (*moduloLogger, error) {
+	if _, err := backup.Step(0); err != nil {
+		return nil, fmt.Errorf("backup step(0) failed: %w", err)
+	}
 	totalPages := backup.PageCount()
-	if totalPages > 0 {
-		remainingPages := backup.Remaining()
-		donePages := totalPages - remainingPages
-		h.logger.Info("Online backup in progress",
-			"pages_copied", donePages,
-			"total_pages", totalPages,
-		)
+	if totalPages == 0 {
+		return nil, nil
+	}
+
+	const numLogPoints = 10
+	logPageInterval := totalPages / numLogPoints
+	if logPageInterval == 0 {
+		logPageInterval = 1
+	}
+
+	return &moduloLogger{
+		logger:          logger,
+		totalPages:      totalPages,
+		logPageInterval: logPageInterval,
+		nextLogTarget:   logPageInterval,
+	}, nil
+}
+
+// Log checks if the backup has progressed enough to warrant a log message.
+func (m *moduloLogger) Log(backup *sqlite.Backup) {
+	copiedPages := m.totalPages - backup.Remaining()
+	if copiedPages >= m.nextLogTarget {
+		m.log(backup)
+		m.nextLogTarget += m.logPageInterval
 	}
 }
+
+// LogFinal logs the final progress message.
+func (m *moduloLogger) LogFinal(backup *sqlite.Backup) {
+	m.log(backup)
+}
+
+// log is a private helper to format and write the progress log message.
+func (m *moduloLogger) log(backup *sqlite.Backup) {
+	copiedPages := m.totalPages - backup.Remaining()
+	m.logger.Info("Online backup in progress",
+		"pages_copied", copiedPages,
+		"total_pages", m.totalPages,
+	)
+}
+
+// --- Other Helpers ---
 
 // compressFile reads a source file, compresses it with gzip, and writes to a destination file.
 func (h *Handler) compressFile(sourcePath, destPath string) error {
