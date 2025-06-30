@@ -1,3 +1,4 @@
+
 package sqlitebackup
 
 import (
@@ -25,27 +26,25 @@ const (
 type Config struct {
 	SourcePath string `toml:"source_path"`
 	BackupDir  string `toml:"backup_dir"`
-
-	// Strategy defines the backup method to use.
-	// "vacuum" (default): Fast, but locks writers. Good for low-write DBs or off-peak backups.
-	// "online": Slower, but non-locking. Good for high-write, 24/7 DBs.
-	Strategy string `toml:"strategy"`
-
-	// PagesPerStep is the number of pages to copy in one step for the "online" strategy.
-	PagesPerStep int `toml:"pages_per_step"`
-	// SleepInterval is the duration to pause between steps in the "online" strategy.
+	Strategy   string `toml:"strategy"`
+	PagesPerStep  int `toml:"pages_per_step"`
 	SleepInterval time.Duration `toml:"sleep_interval"`
 }
 
 // Handler handles database backup jobs
 type Handler struct {
-	cfg *Config
+	cfg    *Config
+	logger *slog.Logger
 }
 
 // NewHandler creates a new Handler
-func NewHandler(cfg *Config) *Handler {
+func NewHandler(cfg *Config, logger *slog.Logger) *Handler {
+	if cfg == nil || logger == nil {
+		panic("NewHandler: received nil config or logger")
+	}
 	return &Handler{
-		cfg: cfg,
+		cfg:    cfg,
+		logger: logger.With("job_handler", "sqlite_backup"),
 	}
 }
 
@@ -54,7 +53,7 @@ func GenerateBlueprintConfig() Config {
 	return Config{
 		SourcePath:    "/path/to/your/database.db",
 		BackupDir:     "/path/to/your/backups",
-		Strategy:      StrategyVacuum, // Default to the simpler, locking strategy
+		Strategy:      StrategyVacuum,
 		PagesPerStep:  100,
 		SleepInterval: 10 * time.Millisecond,
 	}
@@ -71,14 +70,14 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	finalBackupPath := filepath.Join(backupDir, finalBackupName)
 	manifestPath := filepath.Join(backupDir, "latest.txt")
 
-	slog.Info("Starting database backup process", "source", sourceDbPath, "strategy", h.cfg.Strategy)
+	h.logger.Info("Starting database backup process", "source", sourceDbPath, "strategy", h.cfg.Strategy)
 
 	// Dispatch to the chosen backup strategy
 	var backupErr error
 	switch h.cfg.Strategy {
 	case StrategyOnline:
 		backupErr = h.onlineBackup(sourceDbPath, tempBackupPath)
-	case StrategyVacuum, "": // Default to "vacuum" if the field is missing or empty
+	case StrategyVacuum, "": // Default to "vacuum"
 		backupErr = h.vacuumInto(sourceDbPath, tempBackupPath)
 	default:
 		return fmt.Errorf("unknown backup strategy: %q", h.cfg.Strategy)
@@ -88,27 +87,27 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 		return fmt.Errorf("backup creation failed: %w", backupErr)
 	}
 	defer os.Remove(tempBackupPath)
-	slog.Info("Successfully created temporary backup database", "path", tempBackupPath)
+	h.logger.Info("Successfully created temporary backup database", "path", tempBackupPath)
 
-	// Gzip the temporary file to its final destination
+	// Gzip the temporary file
 	if err := h.compressFile(tempBackupPath, finalBackupPath); err != nil {
 		return fmt.Errorf("failed to gzip backup file: %w", err)
 	}
-	slog.Info("Successfully compressed backup", "path", finalBackupPath)
+	h.logger.Info("Successfully compressed backup", "path", finalBackupPath)
 
 	// Update the manifest file
 	if err := os.WriteFile(manifestPath, []byte(finalBackupName), 0644); err != nil {
 		return fmt.Errorf("failed to update manifest file: %w", err)
 	}
-	slog.Info("Successfully updated manifest file", "manifest", manifestPath)
+	h.logger.Info("Successfully updated manifest file", "manifest", manifestPath)
 
-	slog.Info("Database backup process completed successfully")
+	h.logger.Info("Database backup process completed successfully")
 	return nil
 }
 
-// vacuumInto creates a clean, defragmented copy of the database. It locks writers for its entire duration.
+// vacuumInto creates a clean, defragmented copy of the database.
 func (h *Handler) vacuumInto(sourcePath, destPath string) error {
-	slog.Info("Starting 'vacuum' backup. Writers will be blocked during this operation.")
+	h.logger.Info("Starting 'vacuum' backup. Writers will be blocked during this operation.")
 	sourceConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
 		return fmt.Errorf("failed to open source db for vacuum: %w", err)
@@ -127,16 +126,16 @@ func (h *Handler) vacuumInto(sourcePath, destPath string) error {
 	return nil
 }
 
-// onlineBackup performs a live backup using the SQLite Online Backup API. It is non-locking but slower.
+// onlineBackup performs a live backup using the SQLite Online Backup API.
 func (h *Handler) onlineBackup(sourcePath, destPath string) error {
-	slog.Info("Starting 'online' backup. This may take longer but will not block writers.")
+	h.logger.Info("Starting 'online' backup. This may take longer but will not block writers.")
 	pagesPerStep := h.cfg.PagesPerStep
 	if pagesPerStep <= 0 {
-		pagesPerStep = 100 // Sensible default
+		pagesPerStep = 100
 	}
 	sleepInterval := h.cfg.SleepInterval
 	if sleepInterval < 0 {
-		sleepInterval = 10 * time.Millisecond // Sensible default
+		sleepInterval = 10 * time.Millisecond
 	}
 
 	srcConn, err := sqlitex.Open(sourcePath, sqlite.OpenReadOnly, "")
@@ -157,14 +156,14 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 	}
 	defer backup.Finish()
 
-	slog.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval)
+	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval)
 	for {
 		done, err := backup.Step(pagesPerStep)
 		if err != nil {
 			return fmt.Errorf("backup step failed: %w", err)
 		}
 		if done {
-			slog.Info("Online backup copy completed successfully.")
+			h.logger.Info("Online backup copy completed successfully.")
 			return nil
 		}
 		if sleepInterval > 0 {
