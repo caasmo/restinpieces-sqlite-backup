@@ -1,34 +1,49 @@
-
 package main
 
 import (
+	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
-	sqlitebackup "github.com.com/caasmo/restinpieces-sqlite-backup"
+	sqlitebackup "github.com/caasmo/restinpieces-sqlite-backup"
 	"github.com/pelletier/go-toml/v2"
 )
 
-const outputFilename = "config.toml.blueprint"
-
 func main() {
-	// Get the default configuration from the package
-	blueprint := sqlitebackup.GenerateBlueprintConfig()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
 
-	// Marshal the blueprint struct to a TOML-formatted byte slice.
-	tomlBytes, err := toml.Marshal(blueprint)
+	outputFileFlag := flag.String("output", "backup.blueprint.toml", "Output file path for the blueprint TOML configuration")
+	flag.StringVar(outputFileFlag, "o", "backup.blueprint.toml", "Output file path (shorthand)")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Generates a blueprint backup TOML configuration file with example values.\n")
+		fmt.Fprintf(os.Stderr, "Remember to replace placeholder values.\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+	}
+
+	flag.Parse()
+
+	logger.Info("Generating backup blueprint configuration...")
+	blueprintCfg := sqlitebackup.GenerateBlueprintConfig()
+
+	logger.Info("Marshalling configuration to TOML...")
+	tomlBytes, err := toml.Marshal(blueprintCfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error encoding TOML: %v\n", err)
+		logger.Error("Failed to marshal blueprint config to TOML", "error", err)
 		os.Exit(1)
 	}
 
-	// Write the content to the blueprint file.
-	err = os.WriteFile(outputFilename, tomlBytes, 0644)
+	logger.Info("Writing blueprint configuration", "path", *outputFileFlag)
+	err = os.WriteFile(*outputFileFlag, tomlBytes, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing to file %s: %v\n", outputFilename, err)
+		logger.Error("Failed to write blueprint file", "path", *outputFileFlag, "error", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully created blueprint configuration file: %s\n", outputFilename)
-	fmt.Println("You can now edit this file and use it to configure the backup job.")
+	logger.Info("Successfully created blueprint configuration file", "path", *outputFileFlag)
 }
