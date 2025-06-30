@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -18,14 +18,13 @@ import (
 )
 
 // Config holds the configuration for the pullfile client.
-// In a real application, this would be populated from command-line flags or a config file.
 type Config struct {
 	SSHUser           string
 	SSHHost           string
 	SSHPort           string
 	SSHPrivateKeyPath string
-	RemoteBackupDir   string // The directory on Machine B where backups are stored.
-	LocalBackupDir    string // The directory on Machine A to save the backups.
+	RemoteBackupDir   string
+	LocalBackupDir    string
 }
 
 func main() {
@@ -42,7 +41,6 @@ func main() {
 	ctx := context.Background()
 	slog.Info("Starting pullfile client")
 
-	// 1. Connect via SSH and set up SFTP client
 	sftpClient, err := setupSftpClient(cfg)
 	if err != nil {
 		slog.Error("Failed to set up SFTP client", "error", err)
@@ -50,15 +48,13 @@ func main() {
 	}
 	defer sftpClient.Close()
 
-	// 2. Get the latest backup filename from the manifest
-	latestBackupFilename, err := getLatestBackupFilename(sftpClient, cfg.RemoteBackupDir)
+	latestBackupFilename, err := findLatestBackup(sftpClient, cfg.RemoteBackupDir)
 	if err != nil {
-		slog.Error("Failed to get latest backup filename", "error", err)
+		slog.Error("Failed to find latest backup", "error", err)
 		os.Exit(1)
 	}
 	slog.Info("Found latest backup file to fetch", "filename", latestBackupFilename)
 
-	// 3. Download the backup file
 	localPath, err := downloadBackup(sftpClient, cfg.RemoteBackupDir, latestBackupFilename, cfg.LocalBackupDir)
 	if err != nil {
 		slog.Error("Failed to download backup", "error", err)
@@ -66,7 +62,6 @@ func main() {
 	}
 	slog.Info("Successfully downloaded backup", "path", localPath)
 
-	// 4. Decompress and verify the backup
 	if err := verifyBackup(ctx, localPath); err != nil {
 		slog.Error("Backup verification failed", "error", err)
 		os.Exit(1)
@@ -91,7 +86,7 @@ func setupSftpClient(cfg Config) (*sftp.Client, error) {
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // In production, use a proper host key callback
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         15 * time.Second,
 	}
 
@@ -109,22 +104,22 @@ func setupSftpClient(cfg Config) (*sftp.Client, error) {
 	return client, nil
 }
 
-func getLatestBackupFilename(client *sftp.Client, remoteDir string) (string, error) {
-	manifestPath := filepath.Join(remoteDir, "latest.txt")
-	f, err := client.Open(manifestPath)
+// findLatestBackup lists files in the remote directory and returns the name of the most recent one.
+func findLatestBackup(client *sftp.Client, remoteDir string) (string, error) {
+	files, err := client.ReadDir(remoteDir)
 	if err != nil {
-		return "", fmt.Errorf("could not open remote manifest file: %w", err)
+		return "", fmt.Errorf("could not list remote directory: %w", err)
 	}
-	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	if scanner.Scan() {
-		return scanner.Text(), nil
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Name() > files[j].Name()
+	})
+
+	if len(files) == 0 {
+		return "", fmt.Errorf("no backup files found in remote directory: %s", remoteDir)
 	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("error reading manifest file: %w", err)
-	}
-	return "", fmt.Errorf("manifest file is empty")
+
+	return files[0].Name(), nil
 }
 
 func downloadBackup(client *sftp.Client, remoteDir, filename, localDir string) (string, error) {
@@ -156,7 +151,6 @@ func downloadBackup(client *sftp.Client, remoteDir, filename, localDir string) (
 }
 
 func verifyBackup(ctx context.Context, gzippedBackupPath string) error {
-	// Decompress to a temporary file
 	tempDBPath := filepath.Join(os.TempDir(), fmt.Sprintf("verified-%d.db", time.Now().UnixNano()))
 	if err := decompressFile(gzippedBackupPath, tempDBPath); err != nil {
 		return fmt.Errorf("failed to decompress for verification: %w", err)
@@ -165,14 +159,12 @@ func verifyBackup(ctx context.Context, gzippedBackupPath string) error {
 
 	slog.Info("Decompressed backup for verification", "path", tempDBPath)
 
-	// Open the database with the zombiezen driver
 	conn, err := sqlite.OpenConn(tempDBPath, sqlite.OpenReadOnly)
 	if err != nil {
 		return fmt.Errorf("failed to open decompressed database: %w", err)
 	}
 	defer conn.Close()
 
-	// Run the integrity check
 	stmt, err := conn.Prepare("PRAGMA integrity_check;")
 	if err != nil {
 		return fmt.Errorf("failed to prepare integrity_check statement: %w", err)

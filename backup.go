@@ -79,7 +79,6 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	finalBackupName := fmt.Sprintf("%s-%s-%s.bck.gz", fileNameOnly, timestamp, strategyForFilename)
 
 	finalBackupPath := filepath.Join(backupDir, finalBackupName)
-	manifestPath := filepath.Join(backupDir, "latest.txt")
 
 	h.logger.Info("Starting database backup process", "source", sourceDbPath, "strategy", h.cfg.Strategy, "destination", finalBackupPath)
 
@@ -105,11 +104,6 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 		return fmt.Errorf("failed to gzip backup file: %w", err)
 	}
 	h.logger.Info("Successfully compressed backup", "path", finalBackupPath)
-
-	if err := os.WriteFile(manifestPath, []byte(finalBackupName), 0644); err != nil {
-		return fmt.Errorf("failed to update manifest file: %w", err)
-	}
-	h.logger.Info("Successfully updated manifest file", "manifest", manifestPath)
 
 	h.logger.Info("Database backup process completed successfully")
 	return nil
