@@ -169,7 +169,7 @@ func verifyBackup(ctx context.Context, gzippedBackupPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to prepare integrity_check statement: %w", err)
 	}
-	defer stmt.Close()
+	defer stmt.Finalize()
 
 	row, err := stmt.Step()
 	if err != nil {
