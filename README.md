@@ -61,21 +61,7 @@ go build ./cmd/insert-job
 
 Choosing the correct backup strategy is critical for ensuring your application remains performant.
 
-### `vacuum` (Default Strategy)
-
-This strategy uses the `VACUUM INTO` command to create the backup.
-
--   **Pros:**
-    -   **Fast:** It's the quickest way to get a backup.
-    -   **Defragmented:** The resulting backup file is clean and unfragmented, making it slightly smaller and faster to restore.
--   **Cons:**
-    -   **Locks Writers:** This is the major drawback. It places a read lock on the source database, **blocking all write operations** for the entire duration of the backup.
--   **When to use it:**
-    -   Databases with low write activity.
-    -   During scheduled maintenance or predictable off-peak hours where a brief write-pause is acceptable.
-    -   When you need a defragmented copy for analytical purposes.
-
-### `online`
+### `online` (Default Strategy)
 
 This strategy uses SQLite's built-in Online Backup API.
 
@@ -88,6 +74,20 @@ This strategy uses SQLite's built-in Online Backup API.
     -   **Recommended for most production systems.**
     -   Databases with high, unpredictable, or 24/7 write workloads.
     -   When application availability is more important than raw backup speed.
+
+### `vacuum`
+
+This strategy uses the `VACUUM INTO` command to create the backup.
+
+-   **Pros:**
+    -   **Fast:** It's the quickest way to get a backup.
+    -   **Defragmented:** The resulting backup file is clean and unfragmented, making it slightly smaller and faster to restore.
+-   **Cons:**
+    -   **Locks Writers:** This is the major drawback. It places a read lock on the source database, **blocking all write operations** for the entire duration of the backup.
+-   **When to use it:**
+    -   Databases with low write activity.
+    -   During scheduled maintenance or predictable off-peak hours where a brief write-pause is acceptable.
+    -   When you need a defragmented copy for analytical purposes.
 
 ### Configuration Parameters
 

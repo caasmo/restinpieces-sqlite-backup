@@ -54,7 +54,7 @@ func GenerateBlueprintConfig() Config {
 	return Config{
 		SourcePath:          "/path/to/your/database.db",
 		BackupDir:           "/path/to/your/backups",
-		Strategy:            StrategyVacuum,
+		Strategy:            StrategyOnline, // Default to the safer, non-locking strategy
 		PagesPerStep:        100,
 		SleepInterval:       Duration{Duration: 10 * time.Millisecond},
 		ProgressLogInterval: Duration{Duration: 15 * time.Second},
@@ -85,10 +85,10 @@ func (h *Handler) Handle(ctx context.Context, job db.Job) error {
 	// --- Dispatch to the chosen backup strategy ---
 	var backupErr error
 	switch h.cfg.Strategy {
-	case StrategyOnline:
-		backupErr = h.onlineBackup(sourceDbPath, tempBackupPath)
-	case StrategyVacuum, "":
+	case StrategyVacuum:
 		backupErr = h.vacuumInto(sourceDbPath, tempBackupPath)
+	case StrategyOnline, "": // Default to "online" if the field is missing or empty
+		backupErr = h.onlineBackup(sourceDbPath, tempBackupPath)
 	default:
 		return fmt.Errorf("unknown backup strategy: %q", h.cfg.Strategy)
 	}
