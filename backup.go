@@ -119,6 +119,7 @@ func (h *Handler) validateOnlineConfig() error {
 
 // vacuumInto creates a clean, defragmented copy of the database.
 func (h *Handler) vacuumInto(sourcePath, destPath string) error {
+	h.logger.Info("Starting 'vacuum' backup. Writers will be blocked during this operation.")
 	sourceConn, err := sqlite.OpenConn(sourcePath, sqlite.OpenReadOnly)
 	if err != nil {
 		return fmt.Errorf("failed to open source db for vacuum: %w", err)
@@ -139,6 +140,7 @@ func (h *Handler) vacuumInto(sourcePath, destPath string) error {
 
 // onlineBackup performs a live backup using the SQLite Online Backup API.
 func (h *Handler) onlineBackup(sourcePath, destPath string) error {
+	h.logger.Info("Starting 'online' backup. This may take longer but will not block writers.")
 
 	if err := h.validateOnlineConfig(); err != nil {
 		return err
@@ -170,7 +172,7 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 	}()
 
 	// --- Page-Based Progress Logging Setup ---
-	if _, err := backup.Step(0); err != nil { // Step(0) initializes page counts
+	if _, err := backup.Step(0); err != nil {
 		return fmt.Errorf("backup step(0) failed: %w", err)
 	}
 	totalPages := backup.PageCount()
@@ -184,7 +186,7 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 	if logPageInterval == 0 {
 		logPageInterval = 1
 	}
-	nextLogTarget := totalPages - logPageInterval
+	nextLogTarget := logPageInterval
 
 	h.logger.Info("Starting online backup copy", "pages_per_step", pagesPerStep, "sleep_interval", sleepInterval, "total_pages", totalPages)
 
@@ -194,13 +196,14 @@ func (h *Handler) onlineBackup(sourcePath, destPath string) error {
 			return fmt.Errorf("backup step failed: %w", err)
 		}
 
-		if backup.Remaining() <= nextLogTarget {
+		copiedPages := totalPages - backup.Remaining()
+		if copiedPages >= nextLogTarget {
 			h.logBackupProgress(backup)
-			nextLogTarget = backup.Remaining() - logPageInterval
+			nextLogTarget += logPageInterval
 		}
 
 		if !more {
-			h.logBackupProgress(backup) // Log one final time to show 100%
+			h.logBackupProgress(backup) // Log one final time to show completion
 			h.logger.Info("Online backup copy completed successfully.")
 			return nil
 		}
@@ -217,10 +220,7 @@ func (h *Handler) logBackupProgress(backup *sqlite.Backup) {
 	if totalPages > 0 {
 		remainingPages := backup.Remaining()
 		donePages := totalPages - remainingPages
-		progress := (float64(donePages) / float64(totalPages)) * 100.0
-
 		h.logger.Info("Online backup in progress",
-			"progress_percent", fmt.Sprintf("%.2f%%", progress),
 			"pages_copied", donePages,
 			"total_pages", totalPages,
 		)
